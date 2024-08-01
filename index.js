@@ -1,18 +1,10 @@
+const WebSocket = require('ws');
+const mongoose = require('mongoose');
 const express = require('express');
 const http = require('http');
-const WebSocket = require('ws');
-const cors = require('cors');
-const mongoose = require('mongoose');
 
 const app = express();
 const server = http.createServer(app);
-
-// CORS configuration
-app.use(cors({
-    // React development server URL
-    methods: ['GET', 'POST'],
-    allowedHeaders: ['Content-Type']
-}));
 
 // Mongoose configuration
 const mongoUri = "mongodb+srv://janithakarunarathna12:E3OUigKBJAVPHgAi@voltmeterv1.vxefnw8.mongodb.net/VoltmeterV1?retryWrites=true&w=majority";
@@ -44,14 +36,18 @@ wss.on('connection', (ws) => {
     const sendReadings = async () => {
         try {
             const readings = await Reading.find({}).exec();
+            console.log('Sending data:', readings); // Log data to check the content
             ws.send(JSON.stringify(readings));
         } catch (error) {
             console.error('Error fetching data:', error);
         }
     };
 
+    // Send test data immediately
+    ws.send(JSON.stringify([{ timestamp: new Date(), volts0: 1.2, volts1: 2.3 }]));
+
     // Send data every 30 seconds
-    const interval = setInterval(sendReadings, 15000);
+    const interval = setInterval(sendReadings, 30000);
 
     ws.on('close', () => {
         clearInterval(interval);
@@ -63,7 +59,7 @@ wss.on('connection', (ws) => {
     });
 });
 
-const PORT = process.env.PORT || 1881; // Different port from Node-RED
+const PORT = process.env.PORT || 1880;
 server.listen(PORT, () => {
-    console.log(`WebSocket server running on http://localhost:${PORT}`);
+    console.log(`Server running on http://localhost:${PORT}`);
 });
