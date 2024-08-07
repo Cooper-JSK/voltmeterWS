@@ -1,16 +1,30 @@
-const WebSocket = require('ws');
-const mongoose = require('mongoose');
 const express = require('express');
 const http = require('http');
-
+const socketIo = require('socket.io');
+const mongoose = require('mongoose');
+const cors = require('cors');
 const app = express();
 const server = http.createServer(app);
+const io = socketIo(server, {
+    cors: {
+        origin: 'http://localhost:5173',
+        methods: ['GET', 'POST']
+    }
+});
+
+// CORS configuration
+app.use(cors({
+    origin: 'http://localhost:5173',
+    methods: ['GET', 'POST'],
+    allowedHeaders: ['Content-Type']
+}));
 
 // Mongoose configuration
 const mongoUri = "mongodb+srv://janithakarunarathna12:E3OUigKBJAVPHgAi@voltmeterv1.vxefnw8.mongodb.net/VoltmeterV1?retryWrites=true&w=majority";
-mongoose.connect(mongoUri, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true
+mongoose.connect(mongoUri).then(() => {
+    console.log('Connected to MongoDB');
+}).catch((err) => {
+    console.error('Error connecting to MongoDB', err);
 });
 
 const ReadingSchema = new mongoose.Schema({
@@ -25,41 +39,54 @@ const ReadingSchema = new mongoose.Schema({
     volts3: Number
 });
 
-const Reading = mongoose.model('Reading', ReadingSchema);
+const Reading = mongoose.model('reading', ReadingSchema);
 
-// WebSocket server setup
-const wss = new WebSocket.Server({ server });
+// WebSocket connection
+io.on('connection', (socket) => {
+    console.log('a user connected');
 
-wss.on('connection', (ws) => {
-    console.log('Client connected');
-
-    const sendReadings = async () => {
+    // Send initial data
+    const sendInitialData = async () => {
         try {
-            const readings = await Reading.find({}).exec();
-            console.log('Sending data:', readings); // Log data to check the content
-            ws.send(JSON.stringify(readings));
-        } catch (error) {
-            console.error('Error fetching data:', error);
+            const data = await Reading.find({}).sort({ timestamp: -1 }).limit(60).exec();
+            console.log('Initial data:', data);  // Log initial data
+            socket.emit('initialData', data.reverse());
+        } catch (err) {
+            console.error(err);
         }
     };
 
-    // Send test data immediately
-    ws.send(JSON.stringify([{ timestamp: new Date(), volts0: 1.2, volts1: 2.3 }]));
+    sendInitialData();
 
-    // Send data every 30 seconds
-    const interval = setInterval(sendReadings, 30000);
-
-    ws.on('close', () => {
-        clearInterval(interval);
-        console.log('Client disconnected');
-    });
-
-    ws.on('error', (error) => {
-        console.error('WebSocket error:', error);
-    });
+    // Periodically send new data
+    setInterval(async () => {
+        try {
+            const data = await Reading.find({}).sort({ timestamp: -1 }).limit(1).exec();
+            console.log('New data:', data);  // Log new data
+            socket.emit('newData', data);
+        } catch (err) {
+            console.error(err);
+        }
+    }, 60000); // 60 seconds
 });
 
-const PORT = process.env.PORT || 1880;
-server.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+// Endpoint to get historical data
+app.get('/data', async (req, res) => {
+    const { startTime, endTime } = req.query;
+    try {
+        const data = await Reading.find({
+            timestamp: {
+                $gte: new Date(startTime),
+                $lte: new Date(endTime)
+            }
+        }).exec();
+        console.log('Historical data:', data);  // Log historical data
+        res.json(data);
+    } catch (err) {
+        res.status(500).json({ error: 'Error fetching data' });
+    }
+});
+
+server.listen(3000, () => {
+    console.log('listening on *:3000');
 });
